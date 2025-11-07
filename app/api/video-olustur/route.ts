@@ -1,22 +1,24 @@
 // app/api/video-olustur/route.ts
-// Temizlenmiş, hata-tolerant ve log-odaklı sürüm.
-// Google VEO 3.1 veya benzeri video üretim API’leriyle uyumlu hale getirildi.
-
 import { NextRequest, NextResponse } from "next/server";
 
 const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const VEO_MODEL = "veo-3.1-fast-generate-preview";
-const MAX_POLL_TIME = 10 * 60 * 1000; // 10 dakika
-const POLL_INTERVAL = 5000;
+const MODEL_CANDIDATES = [
+  // Denenecek endpoint varyasyonları (sıra önemli)
+  "{MODEL}:generateVideo",            // örn: veo-3.1-fast-generate-preview:generateVideo
+  "{MODEL}:generate",                 // örn: veo-3.1-generate-preview:generate
+  "{MODEL}:predictLongRunning",       // bazen kullanılıyor
+  "{MODEL}:predict",                  // fallback
+];
 
-// 🧩 Base64 başlığını temizler (data:image/png;base64,... → sadece içerik)
+const MAX_POLL_TIME = 10 * 60 * 1000;
+const POLL_INTERVAL = 5_000;
+
 function stripDataUrl(base64?: string | null) {
   if (!base64) return null;
   const idx = base64.indexOf(",");
   return idx >= 0 ? base64.slice(idx + 1) : base64;
 }
 
-// 🛡️ JSON parse güvenli
 async function safeJson(res: Response) {
   const text = await res.text();
   try {
@@ -28,7 +30,6 @@ async function safeJson(res: Response) {
 
 export async function POST(req: NextRequest) {
   try {
-    // 1️⃣ Body güvenli parse
     let body: any;
     try {
       body = await req.json();
@@ -43,57 +44,74 @@ export async function POST(req: NextRequest) {
     const aspectRatio = body.aspectRatio || "16:9";
     const base64Image = stripDataUrl(body.base64Image);
 
-    if (!apiKey) {
-      return NextResponse.json({ error: "API anahtarı sağlanmadı (apiKey veya GENAI_API_KEY)." }, { status: 400 });
-    }
-    if (!prompt) {
-      return NextResponse.json({ error: "prompt alanı boş." }, { status: 400 });
-    }
+    if (!apiKey) return NextResponse.json({ error: "API anahtarı sağlanmadı." }, { status: 400 });
+    if (!prompt) return NextResponse.json({ error: "prompt alanı boş." }, { status: 400 });
 
-    // 2️⃣ Video oluşturma isteği (REST)
-    const url = `${API_BASE_URL}/models/${encodeURIComponent(VEO_MODEL)}:generateVideo?key=${encodeURIComponent(apiKey)}`;
+    // Denenecek URL dizisini hazırla (MODEL placeholder'ını body.model veya default ile değiştir)
+    const modelName = body.model || "veo-3.1-fast-generate-preview";
+    const endpoints = MODEL_CANDIDATES.map(p => `${API_BASE_URL}/models/${encodeURIComponent(modelName)}:${p.replace("{MODEL}:", "")}?key=${encodeURIComponent(apiKey)}`);
 
-    const generatePayload: any = {
+    // Payload: endpoint'e göre uyumlu hale getir (özelleştirebiliriz)
+    const payload: any = {
       prompt: { text: prompt },
       videoConfig: { aspectRatio },
     };
+    if (base64Image) payload.inputImage = { content: base64Image };
 
-    if (base64Image) generatePayload.inputImage = { content: base64Image };
+    let lastError: any = null;
+    let genJson: any = null;
+    let genResStatus: number | null = null;
 
-    console.log("🎬 VIDEO GENERATE →", { model: VEO_MODEL, aspectRatio, promptPreview: prompt.slice(0, 100) });
+    // 1) Try endpoints in order
+    for (const url of endpoints) {
+      console.log("Trying endpoint:", url);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const genRes = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(generatePayload),
-    });
-
-    const genParsed = await safeJson(genRes);
-
-    if (!genRes.ok) {
-      const message = genParsed.ok ? (genParsed.json?.error?.message || JSON.stringify(genParsed.json)) : genParsed.text;
-      console.error("❌ GenerateVideo API hata:", genRes.status, message);
-      return NextResponse.json({ error: `GenerateVideo API hata: ${genRes.status} - ${message}` }, { status: 502 });
+      genResStatus = res.status;
+      const parsed = await safeJson(res);
+      if (!res.ok) {
+        console.warn("Endpoint returned error:", url, res.status, parsed.ok ? parsed.json : parsed.text);
+        lastError = { url, status: res.status, parsed };
+        // If 404 specifically, try next endpoint
+        if (res.status === 404) continue;
+        // For non-404 we may still try next endpoints, but break only on certain codes if you want:
+        // continue;
+      } else {
+        // Success-ish response: capture json and break
+        genJson = parsed.ok ? parsed.json : null;
+        console.log("Endpoint success:", url, "parsed.ok:", parsed.ok);
+        // If the response indicates an operation (LRO) or direct videoFiles, break to handle below
+        break;
+      }
     }
 
-    const genJson = genParsed.json;
+    if (!genJson && lastError) {
+      // No successful JSON response from any endpoint
+      console.error("All endpoints failed. Last error:", lastError);
+      // Return last raw body to help debugging (careful with sensitive data)
+      return NextResponse.json({ error: `GenerateVideo API hata: ${lastError.status}`, raw: lastError.parsed?.ok ? lastError.parsed.json : lastError.parsed?.text }, { status: 502 });
+    }
 
-    // 3️⃣ Eğer doğrudan video URL geldiyse
+    // 2) If direct videoFiles exist in genJson, return immediately
     if (genJson?.videoFiles && Array.isArray(genJson.videoFiles) && genJson.videoFiles[0]?.uri) {
-      console.log("✅ Doğrudan videoFiles döndü.");
       return NextResponse.json({ videoUrl: genJson.videoFiles[0].uri });
     }
 
-    // 4️⃣ Long-running operation (polling)
+    // 3) If we received an operation name -> poll it
     const operationName =
       genJson?.name ||
       genJson?.operation?.name ||
       genJson?.operationName ||
-      genJson?.operationId;
+      genJson?.operationId ||
+      genJson?.result?.name;
 
     if (!operationName) {
-      console.warn("⚠️ Operation name bulunamadı:", JSON.stringify(genJson).slice(0, 300));
-      return NextResponse.json({ error: "Generate yanıtında operation veya videoFiles bulunamadı.", raw: genJson }, { status: 502 });
+      console.warn("No operation name found in response; full genJson:", JSON.stringify(genJson).slice(0,1000));
+      return NextResponse.json({ error: "Generate yanıtı beklenen formata uymuyor.", raw: genJson }, { status: 502 });
     }
 
     const opUrl = `${API_BASE_URL}/operations/${encodeURIComponent(operationName)}?key=${encodeURIComponent(apiKey)}`;
@@ -112,59 +130,35 @@ export async function POST(req: NextRequest) {
       operation = opParsed.json;
       if (operation.done) break;
 
-      console.log("⏳ Operation devam ediyor...", operation?.metadata || "metadata yok");
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+      console.log("Operation in progress...", operation?.metadata || "no metadata");
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
     }
 
-    if (!operation || !operation.done) {
-      throw new Error("Video oluşturma işlemi zaman aşımına uğradı veya tamamlanamadı.");
-    }
+    if (!operation || !operation.done) throw new Error("Video oluşturma zaman aşımı veya tamamlanmadı.");
+    if (operation.error) throw new Error(`Video oluşturma hatası: ${operation.error?.message || JSON.stringify(operation.error)}`);
 
-    if (operation.error) {
-      throw new Error(`Video oluşturma hatası: ${operation.error?.message || JSON.stringify(operation.error)}`);
-    }
-
-    // 5️⃣ Video URI bul
-    const possiblePaths = [
-      operation.response,
-      operation.response?.result,
-      genJson,
-      genJson?.result,
-      operation,
-    ];
-
+    // 4) Try to find a video URI in multiple places
+    const candidates = [operation.response, operation.response?.result, genJson, genJson?.result, operation];
     let videoUri: string | null = null;
-    for (const loc of possiblePaths) {
+    for (const loc of candidates) {
       if (!loc) continue;
       if (Array.isArray(loc.videoFiles) && loc.videoFiles[0]?.uri) {
-        videoUri = loc.videoFiles[0].uri;
-        break;
+        videoUri = loc.videoFiles[0].uri; break;
       }
-      if (loc.mediaUris && Array.isArray(loc.mediaUris)) {
-        videoUri = loc.mediaUris[0];
-        break;
-      }
-      if (loc.outputUri) {
-        videoUri = loc.outputUri;
-        break;
-      }
-      if (loc.uri) {
-        videoUri = loc.uri;
-        break;
-      }
+      if (loc?.mediaUris && Array.isArray(loc.mediaUris) && loc.mediaUris[0]) { videoUri = loc.mediaUris[0]; break; }
+      if (loc?.outputUri) { videoUri = loc.outputUri; break; }
+      if (loc?.uri) { videoUri = loc.uri; break; }
     }
 
     if (!videoUri) {
-      console.error("🎥 Video oluşturuldu ama URI bulunamadı:", JSON.stringify(operation).slice(0, 500));
-      return NextResponse.json({ error: "Video URI bulunamadı, logları kontrol et." }, { status: 502 });
+      console.error("Operation done but no video URI found. Operation:", JSON.stringify(operation).slice(0,2000));
+      return NextResponse.json({ error: "Video URI bulunamadı. Logs kontrol et." }, { status: 502 });
     }
 
-    console.log("✅ Video URL bulundu:", videoUri);
     return NextResponse.json({ videoUrl: videoUri });
 
   } catch (err: any) {
-    console.error("💥 Sunucu hatası:", err);
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Server error in /api/video-olustur:", err);
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
   }
 }
