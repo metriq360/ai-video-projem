@@ -1,11 +1,11 @@
 // "Mutfak" (Backend) Kodu
 // VEO 3.1 çağrısını yapacak sunucusuz fonksiyon (app/api/video-olustur/route.ts)
 
-// G PLANI: "F Planı" (ai as any) çalıştı, Vercel 44. satırı geçti.
-// Ama bu sefer de dilbilgisi polisi 79. satırdaki 'part' değişkenine takıldı.
-// Şimdi o 'part' değişkenine de 'any' tipi vererek polisi TAMAMEN susturuyoruz.
+// J PLANI: Vercel'in inatla görmediği getGenerativeModel fonksiyonunu, 
+// paketi *tamamını* import ederek (import * as) görmeye zorluyoruz. 
+// Artık bu, o 'intermediate value' hatasını gidermeli.
 
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
+import * as gemini from '@google/genai'; // Paketin tamamını import et
 import { NextRequest, NextResponse } from 'next/server';
 
 // --- Yardımcı Fonksiyonlar ---
@@ -30,12 +30,12 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Google AI'yi Başlat ---
-    const ai = new GoogleGenAI(apiKey);
+    // ************* J PLANI *************
+    // Paketin tamamını import ettiğimiz için burada 'gemini.GoogleGenAI' kullanıyoruz.
+    const ai = new gemini.GoogleGenAI(apiKey);
 
-    // ************* F PLANI (C PLANI'nın İntikamı) *************
     // Vercel'in bozuk tip dosyasını (dilbilgisi polisini) susturuyoruz.
-    // 'E Planı' (Önbelleği Sil) sayesinde artık Vercel'de '0.15.0' paketi var
-    // ve bu kod (ai as any) sayesinde çalışacak.
+    // Artık 'ai' değişkenine gerek yok, çünkü tüm paket 'gemini' adında.
     const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
 
     // 3. Giriş verilerini (video parts) hazırla
@@ -66,16 +66,14 @@ export async function POST(req: NextRequest) {
       },
       // Güvenlik ayarlarını VEO için esnet
       safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: gemini.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: gemini.HarmBlockThreshold.BLOCK_NONE },
+        { category: gemini.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: gemini.HarmBlockThreshold.BLOCK_NONE },
+        { category: gemini.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: gemini.HarmBlockThreshold.BLOCK_NONE },
+        { category: gemini.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: gemini.HarmBlockThreshold.BLOCK_NONE },
       ],
     });
 
     // 5. Cevabı (result) işle
-    // ************* G PLANI *************
-    // Dilbilgisi polisine 'part' değişkeninin tipini 'any' olarak bildiriyoruz.
     const videoData = result.response.candidates?.[0].content.parts
       .filter((part: any) => part.videoMetadata)
       .map((part: any) => part.videoMetadata?.videoUri);
