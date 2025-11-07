@@ -5,6 +5,7 @@ import React, { useState, useCallback } from 'react';
 // --- İkonlar (Inline SVG) ---
 // Yükleniyor İkonu
 const LoaderIcon = () => (
+// ... (ikon kodu aynı, değişiklik yok) ...
   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -13,6 +14,7 @@ const LoaderIcon = () => (
 
 // Resim Yükleme İkonu
 const UploadIcon = () => (
+// ... (ikon kodu aynı, değişiklik yok) ...
   <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
@@ -27,26 +29,33 @@ export default function AiVideoStudio() {
 
   // Bölüm 1: Sahne Oluşturucu
   const [storyPrompt, setStoryPrompt] = useState('');
-  const [scenePrompts, setScenePrompts] = useState([]);
+  // Sahne tiplerini belirleyelim
+  type Scene = {
+    prompt: string;
+    duration_seconds: number;
+  };
+  const [scenePrompts, setScenePrompts] = useState<Scene[]>([]);
   const [isLoadingScenes, setIsLoadingScenes] = useState(false);
   const [fileContent, setFileContent] = useState(''); // Yüklenen dosya içeriği
 
   // Bölüm 2: Video Oluşturucu
   const [mainVideoPrompt, setMainVideoPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [base64Image, setBase64Image] = useState(null);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState(null);
+  const [base64Image, setBase64Image] = useState<string | null>(null);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
-  const [videoError, setVideoError] = useState(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   // --- BÖLÜM 1 FONKSİYONLARI (Sahne Oluşturma - Tarayıcıdan) ---
 
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
+  // ************* DÜZELTME 1 *************
+  // 'event' parametresine React tipi (ChangeEvent) eklendi
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files ? event.target.files[0] : null;
     if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setFileContent(e.target.result);
+        setFileContent(e.target?.result as string);
       };
       reader.readAsText(file);
     }
@@ -65,9 +74,7 @@ export default function AiVideoStudio() {
     }
   };
 
-  // ************* DÜZELTİLMİŞ FONKSİYON *************
   const handleGenerateScenes = async () => {
-    // 'if' blokları düzeltildi
     if (!apiKey) {
       setVideoError('Lütfen önce Google AI API Anahtarınızı girin.');
       return;
@@ -81,10 +88,8 @@ export default function AiVideoStudio() {
     setScenePrompts([]);
     setVideoError(null);
 
-    // 'generativelangugage' -> 'generativelanguage' olarak düzeltildi
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-    // Sistem talimatı ile prompt'u güçlendirme
     const systemInstruction = {
       role: "model",
       parts: [{
@@ -122,34 +127,38 @@ export default function AiVideoStudio() {
 
     } catch (error) {
       console.error('Sahne oluşturma hatası:', error);
-      setVideoError(`Sahne oluşturulurken bir hata oluştu: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setVideoError(`Sahne oluşturulurken bir hata oluştu: ${errorMessage}`);
     } finally {
       setIsLoadingScenes(false);
     }
   };
-  // ************* DÜZELTME BİTTİ *************
 
-  const handleUsePrompt = (prompt) => {
+  const handleUsePrompt = (prompt: string) => {
     setMainVideoPrompt(prompt);
   };
 
   // --- BÖLÜM 2 FONKSİYONLARI (Video Oluşturma - Sunucuya) ---
 
-  const handleStyleClick = (style) => {
+  const handleStyleClick = (style: string) => {
     setMainVideoPrompt(prev => `${prev} ${style}`.trim());
   };
 
-  const handleImageUpload = (file) => {
+  // ************* DÜZELTME 2 *************
+  // 'file' parametresine 'File' tipi eklendi
+  const handleImageUpload = (file: File) => {
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setBase64Image(reader.result);
+        setBase64Image(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleDrop = (e) => {
+  // ************* DÜZELTME 3 *************
+  // 'e' parametresine React tipi (DragEvent) eklendi
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -158,14 +167,14 @@ export default function AiVideoStudio() {
     }
   };
 
-  const handleDragOver = (e) => {
+  // ************* DÜZELTME 4 *************
+  // 'e' parametresine React tipi (DragEvent) eklendi
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  // ************* DÜZELTİLMİŞ FONKSİYON *************
   const handleGenerateVideo = async () => {
-    // 'if' blokları düzeltildi
     if (!apiKey) {
       setVideoError('Lütfen önce Google AI API Anahtarınızı girin.');
       return;
@@ -179,7 +188,6 @@ export default function AiVideoStudio() {
     setGeneratedVideoUrl(null);
     setVideoError(null);
 
-    // Sunucusuz fonksiyonun yolu (Next.js App Router için doğru)
     const SERVERLESS_FUNCTION_URL = '/api/video-olustur'; 
 
     try {
@@ -189,7 +197,7 @@ export default function AiVideoStudio() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          apiKey: apiKey, // API anahtarını sunucuya güvenli bir şekilde gönderiyoruz
+          apiKey: apiKey, 
           prompt: mainVideoPrompt,
           aspectRatio: aspectRatio,
           base64Image: base64Image,
@@ -206,12 +214,12 @@ export default function AiVideoStudio() {
 
     } catch (error) {
       console.error('Video oluşturma hatası:', error);
-      setVideoError(`Video oluşturulurken bir hata oluştu: ${error.message}. Sunucu loglarını kontrol edin.`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setVideoError(`Video oluşturulurken bir hata oluştu: ${errorMessage}. Sunucu loglarını kontrol edin.`);
     } finally {
       setIsLoadingVideo(false);
     }
   };
-  // ************* DÜZELTME BİTTİ *************
   
   // --- STIL BUTONLARI ---
   const styleButtons = [
@@ -220,6 +228,7 @@ export default function AiVideoStudio() {
   ];
 
   // --- RENDER (JSX) ---
+  // ... (JSX kodu aynı, değişiklik yok) ...
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto">
@@ -261,7 +270,7 @@ export default function AiVideoStudio() {
               <input
                 type="file"
                 accept=".txt,.md,.json"
-                onChange={handleFileChange}
+                onChange={handleFileChange} // Düzeltilmiş fonksiyon buraya bağlı
                 className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700"
               />
             </div>
@@ -384,10 +393,10 @@ export default function AiVideoStudio() {
                 Başlangıç Görseli (Image-to-Video - İsteğe bağlı)
               </label>
               <div 
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
+                onDrop={handleDrop} // Düzeltilmiş fonksiyon buraya bağlı
+                onDragOver={handleDragOver} // Düzeltilmiş fonksiyon buraya bağlı
                 className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-600 border-dashed rounded-md cursor-pointer"
-                onClick={() => document.getElementById('file-upload').click()}
+                onClick={() => (document.getElementById('file-upload') as HTMLInputElement)?.click()} // Tip eklemesi
               >
                 {base64Image ? (
                   <img src={base64Image} alt="Yüklenen görsel" className="h-24 w-auto rounded-md" />
@@ -396,7 +405,7 @@ export default function AiVideoStudio() {
                     <UploadIcon />
                     <div className="flex text-sm text-gray-400">
                       <p className="pl-1">Görsel sürükleyin veya seçmek için tıklayın</p>
-                      <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="image/*" onChange={(e) => handleImageUpload(e.target.files[0])} />
+                      <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="image/*" onChange={(e) => e.target.files && handleImageUpload(e.target.files[0])} />
                     </div>
                     <p className="text-xs text-gray-500">
                       PNG, JPG, WEBP
