@@ -2,20 +2,23 @@
 // Gerekli bağımlılık: @google/genai
 // 'npm install @google/genai'
 
-import { GoogleGenAI } from '@google/genai'; // <-- HATA 1 DÜZELTİLDİ
+import { GoogleGenAI } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
 // --- Yardımcı Fonksiyonlar ---
 
 // API'den gelen base64 verisini temizler
-const cleanBase64 = (base64String) => {
+// ************* DÜZELTME 1 *************
+// Parametrelere 'string' ve 'number' tipleri eklendi
+const cleanBase64 = (base64String: string | null | undefined): string | null => {
   if (!base64String) return null;
   // 'data:image/png;base64,' gibi başlıkları kaldır
   return base64String.split(',')[1] || base64String;
 };
 
 // API yanıtını beklemek için (polling)
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// ************* DÜZELTME 2 *************
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- Ana Fonksiyon (Handler) ---
 // Next.js App Router için 'POST' fonksiyonu
@@ -35,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. @google/genai kütüphanesini KULLANICIDAN GELEN API anahtarı ile başlat
-    const ai = new GoogleGenAI(apiKey); // <-- HATA 2 DÜZELTİLDİ
+    const ai = new GoogleGenAI(apiKey); 
 
     // 2. VEO 3.1 modelini seç
     const model = ai.getModel({ model: "veo-3.1-fast-generate-preview" });
@@ -44,15 +47,17 @@ export async function POST(req: NextRequest) {
     const videoParts = [];
     
     if (base64Image) {
-      const imageData = cleanBase64(base64Image);
-      const mimeType = base64Image.match(/data:(image\/[a-zA-Z]+);base64,/)?.[1] || 'image/png';
+      const imageData = cleanBase64(base64Image); // TypeScript artık bunun tipini biliyor
+      const mimeType = (base64Image as string).match(/data:(image\/[a-zA-Z]+);base64,/)?.[1] || 'image/png';
       
-      videoParts.push({
-        inlineData: {
-          data: imageData,
-          mimeType: mimeType,
-        },
-      });
+      if (imageData) {
+        videoParts.push({
+          inlineData: {
+            data: imageData,
+            mimeType: mimeType,
+          },
+        });
+      }
     }
 
     videoParts.push({ text: prompt });
@@ -78,7 +83,7 @@ export async function POST(req: NextRequest) {
     let elapsedTime = 0;
 
     while (!operation.done && elapsedTime < maxPollTime) {
-      await sleep(pollInterval);
+      await sleep(pollInterval); // TypeScript artık bunun tipini biliyor
       operation = await ai.operations.get(result.operation.name);
       elapsedTime += pollInterval;
       console.log(`Durum: ${operation.metadata?.state || 'Bilinmiyor'}. Geçen süre: ${elapsedTime / 1000}s`);
