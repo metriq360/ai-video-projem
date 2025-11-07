@@ -11,11 +11,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "API key veya prompt eksik" }, { status: 400 });
     }
 
-    // DOĞRU URL PARAMETRELERİ
-    const url = new URL("https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent");
-    url.searchParams.append("key", apiKey);
-    url.searchParams.append("aspectRatio", aspectRatio);          // DOĞRU
-    url.searchParams.append("duration", duration.toString());    // DOĞRU
+    // DOĞRU MODEL + DOĞRU PARAMETRELER
+    const baseUrl = "https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent";
+    const url = `${baseUrl}?key=${apiKey}&aspect_ratio=${aspectRatio}&duration_seconds=${duration}`;
 
     const requestBody = {
       contents: [
@@ -26,10 +24,10 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    console.log("API URL:", url.toString());
+    console.log("API URL:", url);
     console.log("Payload:", JSON.stringify(requestBody, null, 2));
 
-    const res = await fetch(url.toString(), {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -40,14 +38,14 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       console.error("API HATASI:", JSON.stringify(data, null, 2));
       return NextResponse.json(
-        { error: "GenerateVideo API hata", details: data },
+        { error: "Video oluşturulamadı", details: data },
         { status: 400 }
       );
     }
 
     const operationName = data?.name;
     if (!operationName) {
-      return NextResponse.json({ error: "Operation name alınamadı", raw: data }, { status: 500 });
+      return NextResponse.json({ error: "Operation name yok", raw: data }, { status: 500 });
     }
 
     return NextResponse.json({ operationName });
