@@ -8,8 +8,6 @@ import { NextRequest, NextResponse } from 'next/server';
 // --- Yardımcı Fonksiyonlar ---
 
 // API'den gelen base64 verisini temizler
-// ************* DÜZELTME 1 *************
-// Parametrelere 'string' ve 'number' tipleri eklendi
 const cleanBase64 = (base64String: string | null | undefined): string | null => {
   if (!base64String) return null;
   // 'data:image/png;base64,' gibi başlıkları kaldır
@@ -17,15 +15,12 @@ const cleanBase64 = (base64String: string | null | undefined): string | null => 
 };
 
 // API yanıtını beklemek için (polling)
-// ************* DÜZELTME 2 *************
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- Ana Fonksiyon (Handler) ---
 // Next.js App Router için 'POST' fonksiyonu
 export async function POST(req: NextRequest) {
   try {
-    // Vercel/Next.js'in sunucusuz fonksiyonları için varsayılan zaman aşımını uzat
-    // (Gerekirse vercel.json ile daha da uzatılabilir)
     console.log('Video oluşturma isteği alındı...');
 
     const { apiKey, prompt, aspectRatio, base64Image } = await req.json();
@@ -41,7 +36,9 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI(apiKey); 
 
     // 2. VEO 3.1 modelini seç
-    const model = ai.getModel({ model: "veo-3.1-fast-generate-preview" });
+    // ************* DÜZELTME 3 *************
+    // 'getModel' -> 'getGenerativeModel' olarak düzeltildi
+    const model = ai.getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
     
     // 3. Giriş verilerini (video parts) hazırla
     const videoParts = [];
@@ -75,9 +72,7 @@ export async function POST(req: NextRequest) {
     console.log('İşlem alındı, tamamlanması bekleniyor:', result.operation.name);
     
     let operation = await ai.operations.get(result.operation.name);
-    // Vercel'in Pro planında maksimum 5dk (300s) bekleme süresi olabilir.
-    // Hobby planında daha kısa olabilir (örn. 60s).
-    // Uzun süren işlemler için bu mimari Vercel'de zorlanabilir.
+    
     const maxPollTime = 4 * 60 * 1000; // 4 dakika bekle
     const pollInterval = 5000; // Her 5 saniyede bir kontrol et
     let elapsedTime = 0;
