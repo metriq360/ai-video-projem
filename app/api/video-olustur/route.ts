@@ -9,7 +9,6 @@ export async function POST(req: NextRequest) {
       apiKey: clientApiKey,
       aspectRatio = "16:9",
       duration = 8,
-      base64Image,
     } = body;
 
     const apiKey = clientApiKey || process.env.GENAI_API_KEY;
@@ -18,28 +17,20 @@ export async function POST(req: NextRequest) {
 
     const url = `https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-preview:generateContent?key=${apiKey}`;
 
-    const requestBody: any = {
+    const requestBody = {
       contents: [
         {
           role: "user",
           parts: [{ text: prompt }],
         },
       ],
-      videoGenerationConfig: {  // KÖK SEVİYEDE!
-        durationSeconds: duration,
-        aspectRatio,
+      generationConfig: {
+        video: {  // BURASI DOĞRU!
+          durationSeconds: duration,
+          aspectRatio,
+        },
       },
     };
-
-    if (base64Image) {
-      const base64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, "");
-      requestBody.contents[0].parts.push({
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: base64,
-        },
-      });
-    }
 
     console.log("API URL:", url);
     console.log("Payload:", JSON.stringify(requestBody, null, 2));
@@ -53,7 +44,7 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
 
     if (!res.ok) {
-      console.error("API HATASI:", data);
+      console.error("API HATASI:", JSON.stringify(data, null, 2));
       return NextResponse.json(
         { error: "GenerateVideo API hata", details: data },
         { status: 400 }
