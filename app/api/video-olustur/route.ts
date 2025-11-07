@@ -24,9 +24,9 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        aspectRatio,  // DOĞRU: generationConfig.aspectRatio
-        duration,     // DOĞRU: generationConfig.duration
+      generation_config: {  // snake_case!
+        aspect_ratio: aspectRatio,      // snake_case!
+        duration_seconds: duration,     // snake_case!
       },
     };
 
