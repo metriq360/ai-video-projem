@@ -4,18 +4,18 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      prompt,
-      aspectRatio = "16:9",
-      duration = 8,
-    } = body;
-
+    const { prompt, aspectRatio = "16:9", duration = 8 } = body;
     const apiKey = process.env.GENAI_API_KEY;
+
     if (!apiKey || !prompt) {
       return NextResponse.json({ error: "Eksik" }, { status: 400 });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent?key=${apiKey}`;
+    // QUERY PARAM OLARAK EKLE!
+    const url = new URL(`https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent`);
+    url.searchParams.append("key", apiKey);
+    url.searchParams.append("video_aspect_ratio", aspectRatio);
+    url.searchParams.append("video_duration_seconds", duration.toString());
 
     const requestBody = {
       contents: [
@@ -24,16 +24,12 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generation_config: {  // snake_case!
-        aspect_ratio: aspectRatio,      // snake_case!
-        duration_seconds: duration,     // snake_case!
-      },
     };
 
-    console.log("API URL:", url);
+    console.log("API URL:", url.toString());
     console.log("Payload:", JSON.stringify(requestBody, null, 2));
 
-    const res = await fetch(url, {
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
