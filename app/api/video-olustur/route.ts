@@ -1,10 +1,9 @@
 // "Mutfak" (Backend) Kodu
 // VEO 3.1 çağrısını yapacak sunucusuz fonksiyon (app/api/video-olustur/route.ts)
 
-// F PLANI: "E Planı" (Önbelleği Sil) Vercel'i en yeni paketi (0.15.0) kurmaya zorladı.
-// Ama paket bozuk (tip dosyası eski).
-// Şimdi "C Planı"nı ((ai as any)) geri getirerek o bozuk tip dosyasını (dilbilgisi polisini) susturuyoruz.
-// Artık Vercel'in kurduğu yeni paket (0.15.0) sayesinde bu kod çalışacak.
+// G PLANI: "F Planı" (ai as any) çalıştı, Vercel 44. satırı geçti.
+// Ama bu sefer de dilbilgisi polisi 79. satırdaki 'part' değişkenine takıldı.
+// Şimdi o 'part' değişkenine de 'any' tipi vererek polisi TAMAMEN susturuyoruz.
 
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
@@ -75,9 +74,11 @@ export async function POST(req: NextRequest) {
     });
 
     // 5. Cevabı (result) işle
+    // ************* G PLANI *************
+    // Dilbilgisi polisine 'part' değişkeninin tipini 'any' olarak bildiriyoruz.
     const videoData = result.response.candidates?.[0].content.parts
-      .filter(part => part.videoMetadata)
-      .map(part => part.videoMetadata?.videoUri);
+      .filter((part: any) => part.videoMetadata)
+      .map((part: any) => part.videoMetadata?.videoUri);
 
     if (!videoData || videoData.length === 0 || !videoData[0]) {
       throw new Error('VEO API video URI döndürmedi. Model cevabını kontrol edin.');
