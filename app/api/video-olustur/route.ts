@@ -24,11 +24,9 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generation_config: {  // snake_case!
-        video_config: {     // video_config!
-          duration_seconds: duration,
-          aspect_ratio: aspectRatio,
-        },
+      generationConfig: {
+        aspectRatio,  // DOĞRU: generationConfig.aspectRatio
+        duration,     // DOĞRU: generationConfig.duration
       },
     };
 
