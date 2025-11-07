@@ -1,116 +1,100 @@
-// Bu dosya Next.js App Router yapısına göre app/api/video-olustur/route.ts olmalıdır.
-// Gerekli bağımlılık: @google/genai
-// 'npm install @google/genai'
+// "Mutfak" (Backend) Kodu
+// VEO 3.1 çağrısını yapacak sunucusuz fonksiyon (app/api/video-olustur/route.ts)
 
-import { GoogleGenAI } from '@google/genai';
+// D PLANI: Bu kod, Vercel'in en yeni @google/genai paketini kullanmasını ZORLADIKTAN SONRA çalışacak.
+// Hata 'getGenerativeModel' ise, sorun paketin güncellenmemiş olmasıdır.
+
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
 // --- Yardımcı Fonksiyonlar ---
 
 // API'den gelen base64 verisini temizler
-const cleanBase64 = (base64String: string | null | undefined): string | null => {
+// 'base64String' parametresine 'string | null' tipi eklendi (Düzeltme 2)
+const cleanBase64 = (base64String: string | null): string | null => {
   if (!base64String) return null;
   // 'data:image/png;base64,' gibi başlıkları kaldır
   return base64String.split(',')[1] || base64String;
 };
 
-// API yanıtını beklemek için (polling)
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// --- Ana Fonksiyon (Handler) ---
-// Next.js App Router için 'POST' fonksiyonu
+// --- ANA FONKSİYON (POST Isteği) ---
 export async function POST(req: NextRequest) {
   try {
-    console.log('Video oluşturma isteği alındı...');
+    // 1. İsteğin gövdesini (body) al
+    const body = await req.json();
+    const { apiKey, prompt, aspectRatio, base64Image } = body;
 
-    const { apiKey, prompt, aspectRatio, base64Image } = await req.json();
-
+    // --- Güvenlik Kontrolleri ---
     if (!apiKey) {
-      return NextResponse.json({ error: 'API anahtarı eksik.' }, { status: 401 });
+      return NextResponse.json({ error: 'API anahtarı eksik' }, { status: 400 });
     }
     if (!prompt) {
-      return NextResponse.json({ error: 'Prompt (metin) eksik.' }, { status: 400 });
+      return NextResponse.json({ error: 'Prompt metni eksik' }, { status: 400 });
     }
 
-    // 1. @google/genai kütüphanesini KULLANICIDAN GELEN API anahtarı ile başlat
-    const ai = new GoogleGenAI(apiKey); 
+    // --- Google AI'yi Başlat ---
+    // ************* DÜZELTME 1 *************
+    // 'GoogleGenerativeAI' -> 'GoogleGenAI' olarak düzeltildi
+    const ai = new GoogleGenAI(apiKey);
 
-    // 2. VEO 3.1 modelini seç
-    // ************* DÜZELTME 4 (C PLANI) *************
-    // TypeScript'in dilbilgisi kontrolü (as any) ile kapatıldı.
-    const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
-    
+    // ************* DÜZELTME 3 *************
+    // 'getModel' -> 'getGenerativeModel' olarak düzeltildi
+    // ************* D PLANI *************
+    // '(ai as any)' kaldırıldı. Artık Vercel'in doğru paketi kurduğuna güveniyoruz.
+    const model = ai.getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
+
     // 3. Giriş verilerini (video parts) hazırla
     const videoParts = [];
-    
-    if (base64Image) {
-      const imageData = cleanBase64(base64Image); // TypeScript artık bunun tipini biliyor
-      const mimeType = (base64Image as string).match(/data:(image\/[a-zA-Z]+);base64,/)?.[1] || 'image/png';
-      
-      if (imageData) {
-        videoParts.push({
-          inlineData: {
-            data: imageData,
-            mimeType: mimeType,
-          },
-        });
-      }
+
+    // Başlangıç görseli varsa (Image-to-Video)
+    const cleanedImage = cleanBase64(base64Image);
+    if (cleanedImage) {
+      videoParts.push({
+        inlineData: {
+          mimeType: 'image/png', // veya 'image/jpeg' vb.
+          data: cleanedImage,
+        },
+      });
     }
 
-    videoParts.push({ text: prompt });
+    // Ana video metnini (prompt) ekle
+    videoParts.push({ text: `Video prompt: ${prompt}` });
 
-    // 4. Video oluşturma ayarları
-    const generationConfig = {
-      aspectRatio: aspectRatio === '16:9' ? 'LANDSCAPE' : 'PORTRAIT',
-    };
+    // En-boy oranını ekle
+    videoParts.push({ text: `En-boy oranı: ${aspectRatio || '16:9'}` });
 
-    // 5. Video oluşturma işlemini BAŞLAT
-    // ************* DÜZELTME 5 (C PLANI) *************
-    // (as any) burada da gerekli olabilir
-    const result = await (model as any).generateVideo(videoParts, generationConfig);
+    // 4. Videoyu oluştur (generateVideos)
+    const result = await model.generateContent({
+      content: {
+        role: 'user',
+        parts: videoParts,
+      },
+      // Güvenlik ayarlarını VEO için esnet
+      safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      ],
+    });
 
-    // 6. İşlemi (Operation) bekle (Polling)
-    console.log('İşlem alındı, tamamlanması bekleniyor:', result.operation.name);
-    
-    // ************* DÜZELTME 6 (C PLANI) *************
-    let operation = await (ai as any).operations.get(result.operation.name);
-    
-    const maxPollTime = 4 * 60 * 1000; // 4 dakika bekle
-    const pollInterval = 5000; // Her 5 saniyede bir kontrol et
-    let elapsedTime = 0;
+    // 5. Cevabı (result) işle
+    // VEO 3.1 (veo-3.1-fast-generate-preview) doğrudan video URI'lerini döndürür, 'operations' beklemeye gerek yok.
+    const videoData = result.response.candidates?.[0].content.parts
+      .filter(part => part.videoMetadata)
+      .map(part => part.videoMetadata?.videoUri);
 
-    while (!operation.done && elapsedTime < maxPollTime) {
-      await sleep(pollInterval); // TypeScript artık bunun tipini biliyor
-      operation = await (ai as any).operations.get(result.operation.name);
-      elapsedTime += pollInterval;
-      console.log(`Durum: ${operation.metadata?.state || 'Bilinmiyor'}. Geçen süre: ${elapsedTime / 1000}s`);
+    if (!videoData || videoData.length === 0 || !videoData[0]) {
+      throw new Error('VEO API video URI döndürmedi. Model cevabını kontrol edin.');
     }
 
-    if (!operation.done) {
-      throw new Error(`Video oluşturma işlemi zaman aşımına uğradı (${elapsedTime / 1000}s). Vercel zaman aşımı olabilir.`);
-    }
-
-    if (operation.error) {
-       throw new Error(`Video oluşturma hatası: ${operation.error.message}`);
-    }
-    
-    // 7. Başarılı video dosyasının URI'sini al
-    const videoFile = operation.response?.videoFiles?.[0];
-
-    if (!videoFile || !videoFile.uri) {
-      console.error('API yanıtı beklenmedik formatta:', JSON.stringify(operation.response, null, 2));
-      throw new Error('Video dosyası API yanıtında bulunamadı.');
-    }
-    
-    console.log('Video başarıyla oluşturuldu:', videoFile.uri);
-
-    // 8. Video URL'ini arayüze döndür
-    return NextResponse.json({ videoUrl: videoFile.uri }, { status: 200 });
+    // 6. Başarılı cevabı (video URL'i) arayüze döndür
+    return NextResponse.json({ videoUrl: videoData[0] });
 
   } catch (error) {
-    console.error('Sunucusuz fonksiyon hatası:', error);
-    // Hata mesajını string'e çevir
-    const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen bir sunucu hatası oluştu.';
+    console.error('VEO API HATASI (Sunucu):', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // Hata mesajını arayüze (frontend) gönder
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
