@@ -25,11 +25,9 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        videoGenerationConfig: {
-          durationSeconds: duration,
-          aspectRatio,
-        },
+      videoGenerationConfig: {  // KÖK SEVİYEDE!
+        durationSeconds: duration,
+        aspectRatio,
       },
     };
 
@@ -55,9 +53,9 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
 
     if (!res.ok) {
-      console.error("API 400 HATASI:", data);
+      console.error("API HATASI:", data);
       return NextResponse.json(
-        { error: "GenerateVideo API hata: 400", details: data },
+        { error: "GenerateVideo API hata", details: data },
         { status: 400 }
       );
     }
