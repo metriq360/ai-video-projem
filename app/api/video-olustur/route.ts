@@ -2,7 +2,7 @@
 // Gerekli bağımlılık: @google/genai
 // 'npm install @google/genai'
 
-import { GoogleGenerativeAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai'; // <-- HATA 1 DÜZELTİLDİ
 import { NextRequest, NextResponse } from 'next/server';
 
 // --- Yardımcı Fonksiyonlar ---
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. @google/genai kütüphanesini KULLANICIDAN GELEN API anahtarı ile başlat
-    const ai = new GoogleGenerativeAI(apiKey);
+    const ai = new GoogleGenAI(apiKey); // <-- HATA 2 DÜZELTİLDİ
 
     // 2. VEO 3.1 modelini seç
     const model = ai.getModel({ model: "veo-3.1-fast-generate-preview" });
