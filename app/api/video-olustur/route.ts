@@ -1,130 +1,170 @@
-// Bu dosya Vercel/Next.js App Router için Backend kodudur. (app/api/video-olustur/route.ts)
-// P PLANI: SDK Hatalarını Atlamak için DOĞRUDAN REST API ÇAĞRISI kullanılır.
+// app/api/video-olustur/route.ts
+// Temizlenmiş, hata-tolerant ve log-odaklı sürüm.
+// Google VEO 3.1 veya benzeri video üretim API’leriyle uyumlu hale getirildi.
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
-// --- SABİTLER ---
-const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-const VEO_MODEL = 'veo-3.1-fast-generate-preview';
-const MAX_POLL_TIME = 10 * 60 * 1000; // Maksimum 10 dakika bekle
-const POLL_INTERVAL = 5000; // Her 5 saniyede bir kontrol et
+const API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const VEO_MODEL = "veo-3.1-fast-generate-preview";
+const MAX_POLL_TIME = 10 * 60 * 1000; // 10 dakika
+const POLL_INTERVAL = 5000;
 
-// --- Yardımcı Fonksiyonlar ---
+// 🧩 Base64 başlığını temizler (data:image/png;base64,... → sadece içerik)
+function stripDataUrl(base64?: string | null) {
+  if (!base64) return null;
+  const idx = base64.indexOf(",");
+  return idx >= 0 ? base64.slice(idx + 1) : base64;
+}
 
-// API'den gelen base64 verisini temizler
-const cleanBase64 = (base64String: string | null): string | null => {
-  if (!base64String) return null;
-  // 'data:image/png;base64,' gibi başlıkları kaldır
-  return base64String.split(',')[1] || base64String;
-};
+// 🛡️ JSON parse güvenli
+async function safeJson(res: Response) {
+  const text = await res.text();
+  try {
+    return { ok: true, json: JSON.parse(text) };
+  } catch (e) {
+    return { ok: false, text };
+  }
+}
 
-// --- ANA FONKSİYON (POST Isteği) ---
 export async function POST(req: NextRequest) {
   try {
-    // İsteğin gövdesini parçalayarak daha güvenli JSON okuması sağlıyoruz
-    const { apiKey, prompt, aspectRatio, base64Image } = await req.json();
+    // 1️⃣ Body güvenli parse
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (e) {
+      const txt = await req.text();
+      console.error("Geçersiz JSON body:", txt.slice(0, 500));
+      return NextResponse.json({ error: "İstek body'si geçerli JSON değil." }, { status: 400 });
+    }
+
+    const apiKey = body.apiKey || process.env.GENAI_API_KEY;
+    const prompt = body.prompt;
+    const aspectRatio = body.aspectRatio || "16:9";
+    const base64Image = stripDataUrl(body.base64Image);
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'API anahtarı eksik.' }, { status: 401 });
+      return NextResponse.json({ error: "API anahtarı sağlanmadı (apiKey veya GENAI_API_KEY)." }, { status: 400 });
     }
     if (!prompt) {
-      return NextResponse.json({ error: 'Prompt (metin) eksik.' }, { status: 400 });
-    }
-    
-    // 1. İsteğin gövdesini (body) VEO'nun istediği formata dönüştür
-    const videoParts = [];
-
-    // Image-to-Video için görsel ekle
-    const cleanedImage = cleanBase64(base64Image);
-    if (cleanedImage) {
-      const mimeType = base64Image.match(/data:(image\/[a-zA-Z]+);base64,/)?.[1] || 'image/png';
-      videoParts.push({
-        inlineData: {
-          data: cleanedImage,
-          mimeType: mimeType,
-        },
-      });
+      return NextResponse.json({ error: "prompt alanı boş." }, { status: 400 });
     }
 
-    // Text-to-Video için metni ekle
-    videoParts.push({ text: prompt });
+    // 2️⃣ Video oluşturma isteği (REST)
+    const url = `${API_BASE_URL}/models/${encodeURIComponent(VEO_MODEL)}:generateVideo?key=${encodeURIComponent(apiKey)}`;
 
-    const requestBody = {
-      model: VEO_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: videoParts,
-        },
-      ],
-      config: {
-        aspectRatio: aspectRatio === '16:9' ? 'LANDSCAPE' : 'PORTRAIT',
-        // safetySettings (Güvenlik Ayarları) ve diğer parametreler eklenebilir
-      }
+    const generatePayload: any = {
+      prompt: { text: prompt },
+      videoConfig: { aspectRatio },
     };
 
-    // 2. Video oluşturma işlemini BAŞLAT (REST API Çağrısı)
-    const initResponse = await fetch(`${API_BASE_URL}/models/${VEO_MODEL}:generateVideos?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(MAX_POLL_TIME), 
+    if (base64Image) generatePayload.inputImage = { content: base64Image };
+
+    console.log("🎬 VIDEO GENERATE →", { model: VEO_MODEL, aspectRatio, promptPreview: prompt.slice(0, 100) });
+
+    const genRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(generatePayload),
     });
 
-    if (!initResponse.ok) {
-        const errorData = await initResponse.json();
-        const errorMessage = errorData.error?.message || 'Video başlatma isteği başarısız oldu.';
-        throw new Error(`REST API Başlatma Hatası: ${errorMessage}`);
+    const genParsed = await safeJson(genRes);
+
+    if (!genRes.ok) {
+      const message = genParsed.ok ? (genParsed.json?.error?.message || JSON.stringify(genParsed.json)) : genParsed.text;
+      console.error("❌ GenerateVideo API hata:", genRes.status, message);
+      return NextResponse.json({ error: `GenerateVideo API hata: ${genRes.status} - ${message}` }, { status: 502 });
     }
 
-    const initData = await initResponse.json();
-    const operationName = initData.name;
+    const genJson = genParsed.json;
+
+    // 3️⃣ Eğer doğrudan video URL geldiyse
+    if (genJson?.videoFiles && Array.isArray(genJson.videoFiles) && genJson.videoFiles[0]?.uri) {
+      console.log("✅ Doğrudan videoFiles döndü.");
+      return NextResponse.json({ videoUrl: genJson.videoFiles[0].uri });
+    }
+
+    // 4️⃣ Long-running operation (polling)
+    const operationName =
+      genJson?.name ||
+      genJson?.operation?.name ||
+      genJson?.operationName ||
+      genJson?.operationId;
 
     if (!operationName) {
-        throw new Error('API yanıtında Operation Name bulunamadı.');
+      console.warn("⚠️ Operation name bulunamadı:", JSON.stringify(genJson).slice(0, 300));
+      return NextResponse.json({ error: "Generate yanıtında operation veya videoFiles bulunamadı.", raw: genJson }, { status: 502 });
     }
 
-    // 3. İşlemi bekle (Polling - Durum Kontrolü)
-    let operationUrl = `${API_BASE_URL}/operations/${operationName}?key=${apiKey}`;
-    let operation = null;
-    let elapsedTime = 0;
+    const opUrl = `${API_BASE_URL}/operations/${encodeURIComponent(operationName)}?key=${encodeURIComponent(apiKey)}`;
+    const start = Date.now();
+    let operation: any = null;
 
-    while (elapsedTime < MAX_POLL_TIME) {
-      // Polling aralığı bekle
-      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-      elapsedTime += POLL_INTERVAL;
+    while (Date.now() - start < MAX_POLL_TIME) {
+      const opRes = await fetch(opUrl);
+      const opParsed = await safeJson(opRes);
 
-      const pollResponse = await fetch(operationUrl);
-      if (!pollResponse.ok) {
-        throw new Error(`Polling sırasında API hatası. Durum: ${pollResponse.status}`);
+      if (!opRes.ok) {
+        const msg = opParsed.ok ? JSON.stringify(opParsed.json) : opParsed.text;
+        throw new Error(`Operation fetch hata: ${opRes.status} - ${msg}`);
       }
-      operation = await pollResponse.json();
 
+      operation = opParsed.json;
       if (operation.done) break;
-      // Konsol logu, Vercel loglarında ilerlemeyi görmemizi sağlar
-      console.log(`Durum: ${operation.metadata?.state || 'Bilinmiyor'}. Geçen süre: ${elapsedTime / 1000}s`);
+
+      console.log("⏳ Operation devam ediyor...", operation?.metadata || "metadata yok");
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
     }
 
     if (!operation || !operation.done) {
-      throw new Error('Video oluşturma işlemi zaman aşımına uğradı veya tamamlanamadı.');
+      throw new Error("Video oluşturma işlemi zaman aşımına uğradı veya tamamlanamadı.");
     }
 
     if (operation.error) {
-       throw new Error(`Video oluşturma hatası: ${operation.error.message}`);
+      throw new Error(`Video oluşturma hatası: ${operation.error?.message || JSON.stringify(operation.error)}`);
     }
 
-    // 4. Başarılı video dosyasının URI'sini al
-    const videoFile = operation.response?.videoFiles?.[0];
-    if (!videoFile || !videoFile.uri) {
-      throw new Error('Video dosyası yanıt formatında bulunamadı.');
-    }
-    
-    // 5. Video URL'ini arayüze döndür
-    return NextResponse.json({ videoUrl: videoFile.uri });
+    // 5️⃣ Video URI bul
+    const possiblePaths = [
+      operation.response,
+      operation.response?.result,
+      genJson,
+      genJson?.result,
+      operation,
+    ];
 
-  } catch (error) {
-    console.error('Sunucusuz fonksiyon hatası:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    let videoUri: string | null = null;
+    for (const loc of possiblePaths) {
+      if (!loc) continue;
+      if (Array.isArray(loc.videoFiles) && loc.videoFiles[0]?.uri) {
+        videoUri = loc.videoFiles[0].uri;
+        break;
+      }
+      if (loc.mediaUris && Array.isArray(loc.mediaUris)) {
+        videoUri = loc.mediaUris[0];
+        break;
+      }
+      if (loc.outputUri) {
+        videoUri = loc.outputUri;
+        break;
+      }
+      if (loc.uri) {
+        videoUri = loc.uri;
+        break;
+      }
+    }
+
+    if (!videoUri) {
+      console.error("🎥 Video oluşturuldu ama URI bulunamadı:", JSON.stringify(operation).slice(0, 500));
+      return NextResponse.json({ error: "Video URI bulunamadı, logları kontrol et." }, { status: 502 });
+    }
+
+    console.log("✅ Video URL bulundu:", videoUri);
+    return NextResponse.json({ videoUrl: videoUri });
+
+  } catch (err: any) {
+    console.error("💥 Sunucu hatası:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
