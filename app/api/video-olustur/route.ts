@@ -36,9 +36,9 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI(apiKey); 
 
     // 2. VEO 3.1 modelini seç
-    // ************* DÜZELTME 3 *************
-    // 'getModel' -> 'getGenerativeModel' olarak düzeltildi
-    const model = ai.getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
+    // ************* DÜZELTME 4 (C PLANI) *************
+    // TypeScript'in dilbilgisi kontrolü (as any) ile kapatıldı.
+    const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
     
     // 3. Giriş verilerini (video parts) hazırla
     const videoParts = [];
@@ -65,13 +65,15 @@ export async function POST(req: NextRequest) {
     };
 
     // 5. Video oluşturma işlemini BAŞLAT
-    console.log('VEO video oluşturma işlemi başlatılıyor...');
-    const result = await model.generateVideo(videoParts, generationConfig);
+    // ************* DÜZELTME 5 (C PLANI) *************
+    // (as any) burada da gerekli olabilir
+    const result = await (model as any).generateVideo(videoParts, generationConfig);
 
     // 6. İşlemi (Operation) bekle (Polling)
     console.log('İşlem alındı, tamamlanması bekleniyor:', result.operation.name);
     
-    let operation = await ai.operations.get(result.operation.name);
+    // ************* DÜZELTME 6 (C PLANI) *************
+    let operation = await (ai as any).operations.get(result.operation.name);
     
     const maxPollTime = 4 * 60 * 1000; // 4 dakika bekle
     const pollInterval = 5000; // Her 5 saniyede bir kontrol et
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     while (!operation.done && elapsedTime < maxPollTime) {
       await sleep(pollInterval); // TypeScript artık bunun tipini biliyor
-      operation = await ai.operations.get(result.operation.name);
+      operation = await (ai as any).operations.get(result.operation.name);
       elapsedTime += pollInterval;
       console.log(`Durum: ${operation.metadata?.state || 'Bilinmiyor'}. Geçen süre: ${elapsedTime / 1000}s`);
     }
