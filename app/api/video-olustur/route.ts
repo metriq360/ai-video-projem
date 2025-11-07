@@ -8,14 +8,14 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.GENAI_API_KEY;
 
     if (!apiKey || !prompt) {
-      return NextResponse.json({ error: "Eksik" }, { status: 400 });
+      return NextResponse.json({ error: "API key veya prompt eksik" }, { status: 400 });
     }
 
-    // QUERY PARAM OLARAK EKLE!
-    const url = new URL(`https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent`);
+    // DOĞRU URL PARAMETRELERİ
+    const url = new URL("https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent");
     url.searchParams.append("key", apiKey);
-    url.searchParams.append("video_aspect_ratio", aspectRatio);
-    url.searchParams.append("video_duration_seconds", duration.toString());
+    url.searchParams.append("aspectRatio", aspectRatio);          // DOĞRU
+    url.searchParams.append("duration", duration.toString());    // DOĞRU
 
     const requestBody = {
       contents: [
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const operationName = data?.name;
     if (!operationName) {
-      return NextResponse.json({ error: "Operation name yok", raw: data }, { status: 500 });
+      return NextResponse.json({ error: "Operation name alınamadı", raw: data }, { status: 500 });
     }
 
     return NextResponse.json({ operationName });
