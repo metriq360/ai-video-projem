@@ -24,12 +24,9 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        responseModalities: ["VIDEO"],  // ZORUNLU!
-        video: {
-          aspectRatio,
-          durationSeconds: duration,
-        },
+      generation_config: {  // snake_case!
+        aspect_ratio: aspectRatio,      // snake_case!
+        duration_seconds: duration,     // snake_case!
       },
     };
 
@@ -60,6 +57,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ operationName });
 
   } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
