@@ -21,6 +21,7 @@ const cleanBase64 = (base64String: string | null): string | null => {
 // --- ANA FONKSİYON (POST Isteği) ---
 export async function POST(req: NextRequest) {
   try {
+    // İsteğin gövdesini parçalayarak daha güvenli JSON okuması sağlıyoruz
     const { apiKey, prompt, aspectRatio, base64Image } = await req.json();
 
     if (!apiKey) {
@@ -67,7 +68,6 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-        // Google'ın LRO isteğini tamamlaması için timeout'u artırıyoruz
         signal: AbortSignal.timeout(MAX_POLL_TIME), 
     });
 
@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
     let elapsedTime = 0;
 
     while (elapsedTime < MAX_POLL_TIME) {
+      // Polling aralığı bekle
       await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
       elapsedTime += POLL_INTERVAL;
 
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest) {
       operation = await pollResponse.json();
 
       if (operation.done) break;
+      // Konsol logu, Vercel loglarında ilerlemeyi görmemizi sağlar
       console.log(`Durum: ${operation.metadata?.state || 'Bilinmiyor'}. Geçen süre: ${elapsedTime / 1000}s`);
     }
 
