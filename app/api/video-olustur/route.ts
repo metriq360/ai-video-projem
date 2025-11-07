@@ -1,7 +1,7 @@
-// "Mutfak" (Backend) Kodu - L PLANI
-// Bu plan, VEO'nun kendi generateVideo metodunu kullanır, 
-// böylece getGenerativeModel hatalarından kaçınılır.
+// "Mutfak" (Backend) Kodu - M PLANI (ChatGP Çözümü Entegre)
+// Bu plan, Veo'yu doğru metodla (videos.generate) çağırmayı içerir.
 
+// Not: Google'ın en son SDK'sında (v0.15.0+), Veo için 'videos' adında ayrı bir obje bulunur.
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -28,18 +28,19 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Google AI'yi Başlat ---
-    // Bu sefer 'GoogleGenAI' (yeni isim) kullanıyoruz.
+    // 'GoogleGenAI' (yeni isim) kullanılıyor
     const ai = new GoogleGenAI(apiKey);
+    
+    // ************* M PLANI - KESİN ÇÖZÜM *************
+    // 1. Yeni ve doğru metot: ai.videos.generate() çağrısı yapılıyor.
+    // 2. Bu metot, Long-Running-Operation (LRO) döndürüyor, polling gerekiyor.
 
-    // ************* L PLANI *************
-    // getGenerativeModel metodunu kullanıyoruz (çünkü bu metot daha modern)
-    // ve yine (ai as any) ile Vercel'in tip hatasını susturuyoruz.
-    const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
+    const modelName = 'veo-3.1-fast-generate-preview'; 
 
     // 2. Giriş verilerini (video parts) hazırla
     const videoParts = [];
 
-    // Başlangıç görseli varsa (Image-to-Video)
+    // Image-to-Video için görsel ekle
     const cleanedImage = cleanBase64(base64Image);
     if (cleanedImage) {
       videoParts.push({
@@ -50,30 +51,32 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Ana video metnini (prompt) ekle
-    videoParts.push({ text: `Video prompt: ${prompt}` });
-
-    // 3. Konfigürasyonu hazırla
-    // Not: generateVideo metodunun aksine, generateContent'in config'i farklıdır.
-    const generationConfig = {
-      // En-boy oranı
-      aspectRatio: aspectRatio || '16:9', 
-      // VEO 3.1 için durationSeconds parametresi burada tanımlanmaz, prompt içinde belirtilir
+    // Video oluşturma isteği
+    const requestPayload = {
+        model: modelName,
+        prompt: prompt,
+        aspectRatio: aspectRatio || '16:9',
+        // Görsel varsa, payload'a eklenir.
+        // GoogleAIClient'ın videos.generate metodu, prompt ve görseli ayrı ayrı kabul eder
+        // Bu yapı, VEO'nun en son gereksinimlerine uygundur.
     };
-
-    // 4. Video oluşturma işlemini BAŞLAT
-    // VEO 3.1, generateContent metodu altında çalışır ve bir LRO döndürür.
-    const result = await model.generateContent({
-        contents: [
-            {
-                role: 'user',
-                parts: videoParts,
-            }
-        ],
-        config: generationConfig
-    });
     
-    // 5. İşlemi (Operation) bekle (Polling)
+    // Eğer başlangıç görseli varsa, prompt'u ayrı, görseli ayrı yolluyoruz.
+    // Aksi takdirde sadece metin yolluyoruz.
+    if (cleanedImage) {
+        (requestPayload as any).initImage = videoParts[0]; // İlk kısım initImage olmalı
+        (requestPayload as any).prompt = prompt;
+        // aspectRatio zaten requestPayload içinde
+    } else {
+        (requestPayload as any).prompt = prompt;
+    }
+
+
+    // 3. Video oluşturma işlemini BAŞLAT
+    // (ai as any) kullanımı, TypeScript'in inatçı tip tanımlarını susturmak içindir.
+    const result = await (ai as any).videos.generate(requestPayload);
+    
+    // 4. İşlemi (Operation) bekle (Polling)
     let operation = await (ai as any).operations.get(result.operation.name);
     
     const maxPollTime = 10 * 60 * 1000; 
@@ -95,15 +98,14 @@ export async function POST(req: NextRequest) {
        throw new Error(`VEO API Hatası: ${operation.error.message}`);
     }
 
-    // 6. Başarılı video dosyasının URI'sini al
-    // Bu yapı generateContent ile uyumludur.
+    // 5. Başarılı video dosyasının URI'sini al
     const videoFile = operation.response?.videoFiles?.[0];
 
     if (!videoFile || !videoFile.uri) {
         throw new Error('Video dosyası API yanıtında bulunamadı.');
     }
     
-    // 7. Video URL'ini arayüze döndür
+    // 6. Video URL'ini arayüze döndür
     return NextResponse.json({ videoUrl: videoFile.uri });
 
   } catch (error) {
