@@ -6,16 +6,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       prompt,
-      apiKey: clientApiKey,
       aspectRatio = "16:9",
       duration = 8,
     } = body;
 
-    const apiKey = clientApiKey || process.env.GENAI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "API key eksik" }, { status: 400 });
-    if (!prompt) return NextResponse.json({ error: "Prompt boş" }, { status: 400 });
+    const apiKey = process.env.GENAI_API_KEY;
+    if (!apiKey || !prompt) {
+      return NextResponse.json({ error: "Eksik" }, { status: 400 });
+    }
 
-    // DOĞRU MODEL ADI
     const url = `https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent?key=${apiKey}`;
 
     const requestBody = {
@@ -26,6 +25,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       generationConfig: {
+        responseModalities: ["VIDEO"],  // ZORUNLU!
         video: {
           aspectRatio,
           durationSeconds: duration,
@@ -54,12 +54,12 @@ export async function POST(req: NextRequest) {
 
     const operationName = data?.name;
     if (!operationName) {
-      return NextResponse.json({ error: "Operation name alınamadı", raw: data }, { status: 500 });
+      return NextResponse.json({ error: "Operation name yok", raw: data }, { status: 500 });
     }
 
     return NextResponse.json({ operationName });
 
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+      return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
