@@ -3,7 +3,6 @@
 import React, { useState, useCallback } from 'react';
 
 // --- İkonlar (Inline SVG) ---
-// Yükleniyor İkonu
 const LoaderIcon = () => (
   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -11,7 +10,6 @@ const LoaderIcon = () => (
   </svg>
 );
 
-// Resim Yükleme İkonu
 const UploadIcon = () => (
   <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
     <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -33,8 +31,13 @@ export default function AiVideoStudio() {
     duration_seconds: number;
   };
   const [scenePrompts, setScenePrompts] = useState<Scene[]>([]);
+  // ************* YENİ STATE *************
+  // Hangi sahnelerin seçildiğini (index numarasıyla) takip eder
+  const [selectedScenes, setSelectedScenes] = useState<number[]>([]);
+
   const [isLoadingScenes, setIsLoadingScenes] = useState(false);
-  const [fileContent, setFileContent] = useState(''); // Yüklenen dosya içeriği
+  const [fileContent, setFileContent] = useState(''); 
+  const [totalDuration, setTotalDuration] = useState('30'); 
 
   // Bölüm 2: Video Oluşturucu
   const [mainVideoPrompt, setMainVideoPrompt] = useState('');
@@ -46,7 +49,6 @@ export default function AiVideoStudio() {
 
   // --- BÖLÜM 1 FONKSİYONLARI (Sahne Oluşturma - Tarayıcıdan) ---
 
-  // 'event' parametresine React tipi (ChangeEvent) eklendi
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     if (file) {
@@ -58,7 +60,6 @@ export default function AiVideoStudio() {
     }
   };
 
-  // JSON şeması Gemini API'sine bildiriliyor
   const sceneGenerationSchema = {
     type: "ARRAY",
     items: {
@@ -83,6 +84,7 @@ export default function AiVideoStudio() {
 
     setIsLoadingScenes(true);
     setScenePrompts([]);
+    setSelectedScenes([]); // Yeni sahneler gelince seçimi sıfırla
     setVideoError(null);
 
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -90,7 +92,7 @@ export default function AiVideoStudio() {
     const systemInstruction = {
       role: "model",
       parts: [{
-        text: `Sen bir video kurgu asistanısın. Kullanıcının sağladığı hikayeyi ve (varsa) firma bilgilerini analiz et. Bu hikayeyi, her biri "prompt" ve "duration_seconds" (tavsiye edilen süre) içeren JSON nesnelerinden oluşan bir diziye ayır. Çıktı, doğrudan JSON formatında olmalı. Firma Bilgileri: ${fileContent || 'Yok'}`
+        text: `Sen bir video kurgu asistanısın. Kullanıcının sağladığı hikayeyi ve (varsa) firma bilgilerini analiz et. Kullanıcı, toplamda YAKLAŞIK ${totalDuration || '30'} saniyelik bir video istiyor. Bu hikayeyi, bu toplam süreye UYGUN BİR ŞEKİLDE, her biri "prompt" ve "duration_seconds" içeren JSON nesnelerinden oluşan bir diziye ayır. Sahnelerin toplam süresi ${totalDuration || '30'} saniyeyi çok geçmemeli. Çıktı, doğrudan JSON formatında olmalı. Firma Bilgileri: ${fileContent || 'Yok'}`
       }]
     };
     
@@ -135,13 +137,65 @@ export default function AiVideoStudio() {
     setMainVideoPrompt(prompt);
   };
 
+  // ************* YENİ FONKSİYON *************
+  // Sahne seçme/bırakma işlemini yönetir
+  const handleSceneSelection = (index: number) => {
+    setSelectedScenes(prevSelected => {
+      // Eğer index zaten 'prevSelected' dizisinde varsa, onu çıkar (deslect)
+      if (prevSelected.includes(index)) {
+        return prevSelected.filter(i => i !== index);
+      } 
+      // Eğer yoksa, ekle (select)
+      else {
+        return [...prevSelected, index];
+      }
+    });
+  };
+  
+  // ************* YENİ FONKSİYON *************
+  // Tüm sahneleri seçer
+  const handleSelectAllScenes = () => {
+    // scenePrompts dizisindeki tüm index'leri (0, 1, 2...) seçili hale getir
+    setSelectedScenes(scenePrompts.map((_, index) => index));
+  };
+
+  // ************* YENİ FONKSİYON *************
+  // Tüm seçimi kaldırır
+  const handleDeselectAllScenes = () => {
+    setSelectedScenes([]);
+  };
+
+
+  // ************* GÜNCELLENEN FONKSİYON *************
+  // Artık 'Tüm Sahneleri' değil, 'Seçilen Sahneleri' birleştirir
+  const handleCombineAndUseScenes = () => {
+    // Sadece seçili olan sahneleri filtrele
+    // Not: Seçili sahnelerin sırasını korumak için, seçili index'lere göre
+    // orijinal 'scenePrompts' dizisinden sahneleri alıyoruz.
+    const selectedIndicesInOrder = [...selectedScenes].sort((a, b) => a - b);
+    const scenesToCombine = selectedIndicesInOrder.map(index => scenePrompts[index]);
+
+    if (scenesToCombine.length === 0) {
+      setVideoError("Lütfen birleştirmek için en az bir sahne seçin.");
+      return;
+    }
+    
+    // VEO'nun anlayacağı şekilde "Sahne X:" diye ayırarak birleştiriyoruz
+    const combinedPrompt = scenesToCombine
+      .map((scene, index) => `Sahne ${index + 1} (${scene.duration_seconds}s): ${scene.prompt}`)
+      .join("\n\n"); // Aralarına boşluk koyarak birleştir
+    
+    // Birleştirilmiş metni Bölüm 2'deki ana metin kutusuna ayarla
+    setMainVideoPrompt(combinedPrompt);
+    setVideoError(null); // Başarılı olunca hatayı temizle
+  };
+
   // --- BÖLÜM 2 FONKSİYONLARI (Video Oluşturma - Sunucuya) ---
 
   const handleStyleClick = (style: string) => {
     setMainVideoPrompt(prev => `${prev} ${style}`.trim());
   };
 
-  // 'file' parametresine 'File' tipi eklendi
   const handleImageUpload = (file: File) => {
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
@@ -152,7 +206,6 @@ export default function AiVideoStudio() {
     }
   };
 
-  // 'e' parametresine React tipi (DragEvent) eklendi
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -162,7 +215,6 @@ export default function AiVideoStudio() {
     }
   };
 
-  // 'e' parametresine React tipi (DragEvent) eklendi
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -215,11 +267,17 @@ export default function AiVideoStudio() {
     }
   };
   
-  // --- STIL BUTONLARI ---
-  const styleButtons = [
-    "+sinematik", "+yüksek kaliteli", "+hipergerçekçi", "+anime",
-    "+vlog", "+drone çekimi", "+yakın çekim", "+ağır çekim", "+hızlandırılmış"
+  // --- STIL KARTLARI (GÖRSELLİ) ---
+  const styleCards = [
+    { name: "+sinematik", label: "Sinematik", image: "https://placehold.co/150x100/1E293B/93C5FD?text=Sinematik" },
+    { name: "+hipergerçekçi", label: "Hipergerçekçi", image: "https://placehold.co/150x100/334155/E0E7FF?text=Hiperger%C3%A7ek%C3%A7i" },
+    { name: "+anime", label: "Anime", image: "https://placehold.co/150x100/4C1D95/F5D0FE?text=Anime" },
+    { name: "+vlog", label: "Vlog", image: "https://placehold.co/150x100/15803D/BBF7D0?text=Vlog" },
+    { name: "+drone çekimi", label: "Drone Çekimi", image: "https://placehold.co/150x100/0C4A6E/BAE6FD?text=Drone" },
+    { name: "+ağır çekim", label: "Ağır Çekim", image: "https://placehold.co/150x100/7F1D1D/FECACA?text=A%C4%9F%C4%B1r+%C3%87ekim" },
+    { name: "+yakın çekim", label: "Yakın Çekim", image: "https://placehold.co/150x100/431407/FED7AA?text=Yak%C4%B1n+%C3%87ekim" }
   ];
+
 
   // --- RENDER (JSX) ---
   return (
@@ -263,8 +321,23 @@ export default function AiVideoStudio() {
               <input
                 type="file"
                 accept=".txt,.md,.json"
-                onChange={handleFileChange} // Düzeltilmiş fonksiyon buraya bağlı
+                onChange={handleFileChange} 
                 className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700"
+              />
+            </div>
+
+            {/* İstenen Toplam Süre */}
+            <div className="mb-4">
+              <label htmlFor="total-duration" className="block text-sm font-medium text-gray-300 mb-1">
+                İstenen Toplam Süre (saniye)
+              </label>
+              <input
+                type="number"
+                id="total-duration"
+                value={totalDuration}
+                onChange={(e) => setTotalDuration(e.target.value)}
+                placeholder="Örn., 30"
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             
@@ -275,7 +348,7 @@ export default function AiVideoStudio() {
               </label>
               <textarea
                 id="story-prompt"
-                rows={6} // ************* DÜZELTME 1 (rows="6" -> rows={6}) *************
+                rows={6} 
                 value={storyPrompt}
                 onChange={(e) => setStoryPrompt(e.target.value)}
                 placeholder="Örn., Yalnız bir astronot Mars'ta parlayan bir kristal keşfeder..."
@@ -297,21 +370,68 @@ export default function AiVideoStudio() {
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-2">Oluşturulan Sahneler:</h3>
               {scenePrompts.length > 0 ? (
-                <ul className="max-h-60 overflow-y-auto space-y-3 bg-gray-700 p-4 rounded-md">
-                  {scenePrompts.map((scene, index) => (
-                    <li key={index} className="p-3 bg-gray-600 rounded-md shadow-sm">
-                      <p className="text-sm text-gray-200">
-                        <strong className="text-indigo-300">Sahne {index + 1} ({scene.duration_seconds}s):</strong> {scene.prompt}
-                      </p>
-                      <button
-                        onClick={() => handleUsePrompt(scene.prompt)}
-                        className="mt-2 px-3 py-1 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700"
+                <> 
+                  {/* ************* YENİ KONTROLLER ************* */}
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-gray-300">
+                      {selectedScenes.length} / {scenePrompts.length} sahne seçili
+                    </p>
+                    <div className="space-x-2">
+                      <button 
+                        onClick={handleSelectAllScenes}
+                        className="px-2 py-1 text-xs font-medium bg-gray-600 text-gray-200 rounded-md hover:bg-gray-500"
                       >
-                        Bu metni kullan
+                        Tümünü Seç
                       </button>
-                    </li>
-                  ))}
-                </ul>
+                      <button 
+                        onClick={handleDeselectAllScenes}
+                        className="px-2 py-1 text-xs font-medium bg-gray-600 text-gray-200 rounded-md hover:bg-gray-500"
+                      >
+                        Seçimi Bırak
+                      </button>
+                    </div>
+                  </div>
+
+                  <ul className="max-h-60 overflow-y-auto space-y-3 bg-gray-700 p-4 rounded-md">
+                    {scenePrompts.map((scene, index) => (
+                      <li 
+                        key={index} 
+                        className={`p-3 bg-gray-600 rounded-md shadow-sm transition-all ${selectedScenes.includes(index) ? 'ring-2 ring-green-500' : ''}`}
+                      >
+                        <div className="flex items-start">
+                          {/* ************* YENİ CHECKBOX ************* */}
+                          <input
+                            type="checkbox"
+                            id={`scene-${index}`}
+                            checked={selectedScenes.includes(index)}
+                            onChange={() => handleSceneSelection(index)}
+                            className="mt-1 h-4 w-4 text-green-600 bg-gray-700 border-gray-500 rounded focus:ring-green-500"
+                          />
+                          <label htmlFor={`scene-${index}`} className="ml-3 block w-full">
+                            <p className="text-sm text-gray-200">
+                              <strong className="text-indigo-300">Sahne {index + 1} ({scene.duration_seconds}s):</strong> {scene.prompt}
+                            </p>
+                          </label>
+                        </div>
+                        <button
+                          onClick={() => handleUsePrompt(scene.prompt)}
+                          className="mt-2 ml-7 px-3 py-1 text-xs font-medium bg-gray-700 text-gray-300 rounded-md hover:bg-gray-500"
+                        >
+                          Sadece Bu Metni Kullan (Hızlı Test)
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* ************* GÜNCELLENMİŞ BUTON ************* */}
+                  <button
+                    onClick={handleCombineAndUseScenes}
+                    disabled={selectedScenes.length === 0} // Seçili sahne yoksa pasif yap
+                    className="w-full mt-4 px-4 py-2 bg-green-700 text-white font-semibold rounded-md shadow-md hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Seçilen ({selectedScenes.length}) Sahneyi Birleştir ve Bölüm 2'ye Gönder
+                  </button>
+                </>
               ) : (
                 <p className="text-sm text-gray-400">
                   {isLoadingScenes ? 'Sahneler yükleniyor...' : 'Henüz sahne oluşturulmadı.'}
@@ -333,7 +453,7 @@ export default function AiVideoStudio() {
               </label>
               <textarea
                 id="main-prompt"
-                rows={6} // ************* DÜZELTME 2 (rows="6" -> rows={6}) *************
+                rows={6} 
                 value={mainVideoPrompt}
                 onChange={(e) => setMainVideoPrompt(e.target.value)}
                 placeholder="Oluşturmak istediğiniz videoyu detaylıca tarif edin..."
@@ -341,23 +461,32 @@ export default function AiVideoStudio() {
               />
             </div>
 
-            {/* Stil Butonları */}
+            {/* Stil Kartları (Görselli) */}
             <div className="mb-4">
-              <label className="block text-xs font-medium text-gray-400 mb-2">
-                Hızlı Stiller:
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Hızlı Stiller (Görselli)
               </label>
-              <div className="flex flex-wrap gap-2">
-                {styleButtons.map(style => (
-                  <button
-                    key={style}
-                    onClick={() => handleStyleClick(style)}
-                    className="px-2 py-1 bg-gray-600 text-gray-200 text-xs rounded-full hover:bg-gray-500"
+              <div className="flex overflow-x-auto space-x-4 pb-4">
+                {styleCards.map((style) => (
+                  <div
+                    key={style.name}
+                    onClick={() => handleStyleClick(style.name)}
+                    className="flex-shrink-0 w-36 bg-gray-700 rounded-lg shadow-md overflow-hidden cursor-pointer transform transition-transform hover:scale-105"
                   >
-                    {style}
-                  </button>
+                    <img 
+                      src={style.image} 
+                      alt={style.label} 
+                      className="w-full h-20 object-cover" 
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://placehold.co/150x100/7f1d1d/fee2e2?text=Resim+Hatasi'; }} 
+                    />
+                    <div className="p-2">
+                      <p className="text-xs font-medium text-center text-gray-200">{style.label}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
+
 
             {/* Seçenekler (En-Boy Oranı) */}
             <div className="mb-4">
@@ -386,10 +515,10 @@ export default function AiVideoStudio() {
                 Başlangıç Görseli (Image-to-Video - İsteğe bağlı)
               </label>
               <div 
-                onDrop={handleDrop} // Düzeltilmiş fonksiyon buraya bağlı
-                onDragOver={handleDragOver} // Düzeltilmiş fonksiyon buraya bağlı
+                onDrop={handleDrop} 
+                onDragOver={handleDragOver} 
                 className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-600 border-dashed rounded-md cursor-pointer"
-                onClick={() => (document.getElementById('file-upload') as HTMLInputElement)?.click()} // Tip eklemesi
+                onClick={() => (document.getElementById('file-upload') as HTMLInputElement)?.click()} 
               >
                 {base64Image ? (
                   <img src={base64Image} alt="Yüklenen görsel" className="h-24 w-auto rounded-md" />
