@@ -24,10 +24,10 @@ export async function POST(req: NextRequest) {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        video: {  // BURASI DOĞRU!
-          durationSeconds: duration,
-          aspectRatio,
+      generation_config: {  // snake_case!
+        video_config: {     // video_config!
+          duration_seconds: duration,
+          aspect_ratio: aspectRatio,
         },
       },
     };
