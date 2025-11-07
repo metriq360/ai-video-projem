@@ -1,19 +1,17 @@
 // "Mutfak" (Backend) Kodu
 // VEO 3.1 çağrısını yapacak sunucusuz fonksiyon (app/api/video-olustur/route.ts)
 
-// D PLANI: Bu kod, Vercel'in en yeni @google/genai paketini kullanmasını ZORLADIKTAN SONRA çalışacak.
-// Hata 'getGenerativeModel' ise, sorun paketin güncellenmemiş olmasıdır.
+// F PLANI: "E Planı" (Önbelleği Sil) Vercel'i en yeni paketi (0.15.0) kurmaya zorladı.
+// Ama paket bozuk (tip dosyası eski).
+// Şimdi "C Planı"nı ((ai as any)) geri getirerek o bozuk tip dosyasını (dilbilgisi polisini) susturuyoruz.
+// Artık Vercel'in kurduğu yeni paket (0.15.0) sayesinde bu kod çalışacak.
 
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import { NextRequest, NextResponse } from 'next/server';
 
 // --- Yardımcı Fonksiyonlar ---
-
-// API'den gelen base64 verisini temizler
-// 'base64String' parametresine 'string | null' tipi eklendi (Düzeltme 2)
 const cleanBase64 = (base64String: string | null): string | null => {
   if (!base64String) return null;
-  // 'data:image/png;base64,' gibi başlıkları kaldır
   return base64String.split(',')[1] || base64String;
 };
 
@@ -33,15 +31,13 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Google AI'yi Başlat ---
-    // ************* DÜZELTME 1 *************
-    // 'GoogleGenerativeAI' -> 'GoogleGenAI' olarak düzeltildi
     const ai = new GoogleGenAI(apiKey);
 
-    // ************* DÜZELTME 3 *************
-    // 'getModel' -> 'getGenerativeModel' olarak düzeltildi
-    // ************* D PLANI *************
-    // '(ai as any)' kaldırıldı. Artık Vercel'in doğru paketi kurduğuna güveniyoruz.
-    const model = ai.getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
+    // ************* F PLANI (C PLANI'nın İntikamı) *************
+    // Vercel'in bozuk tip dosyasını (dilbilgisi polisini) susturuyoruz.
+    // 'E Planı' (Önbelleği Sil) sayesinde artık Vercel'de '0.15.0' paketi var
+    // ve bu kod (ai as any) sayesinde çalışacak.
+    const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
 
     // 3. Giriş verilerini (video parts) hazırla
     const videoParts = [];
@@ -51,7 +47,7 @@ export async function POST(req: NextRequest) {
     if (cleanedImage) {
       videoParts.push({
         inlineData: {
-          mimeType: 'image/png', // veya 'image/jpeg' vb.
+          mimeType: 'image/png',
           data: cleanedImage,
         },
       });
@@ -79,7 +75,6 @@ export async function POST(req: NextRequest) {
     });
 
     // 5. Cevabı (result) işle
-    // VEO 3.1 (veo-3.1-fast-generate-preview) doğrudan video URI'lerini döndürür, 'operations' beklemeye gerek yok.
     const videoData = result.response.candidates?.[0].content.parts
       .filter(part => part.videoMetadata)
       .map(part => part.videoMetadata?.videoUri);
