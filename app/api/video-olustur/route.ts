@@ -1,4 +1,4 @@
-// "Mutfak" (Backend) Kodu - K PLANI
+// "Mutfak" (Backend) Kodu - L PLANI
 // Bu plan, VEO'nun kendi generateVideo metodunu kullanır, 
 // böylece getGenerativeModel hatalarından kaçınılır.
 
@@ -31,11 +31,10 @@ export async function POST(req: NextRequest) {
     // Bu sefer 'GoogleGenAI' (yeni isim) kullanıyoruz.
     const ai = new GoogleGenAI(apiKey);
 
-    // ************* K PLANI *************
-    // 1. Doğrudan generateVideo metodunu kullanıyoruz (getGenerativeModel'den kaçınıyoruz)
-    // 2. Bu metot, Long-Running-Operation (LRO) döndürdüğü için polling yapmalıyız.
-
-    const model = 'veo-3.1-fast-generate-preview'; 
+    // ************* L PLANI *************
+    // getGenerativeModel metodunu kullanıyoruz (çünkü bu metot daha modern)
+    // ve yine (ai as any) ile Vercel'in tip hatasını susturuyoruz.
+    const model = (ai as any).getGenerativeModel({ model: "veo-3.1-fast-generate-preview" });
 
     // 2. Giriş verilerini (video parts) hazırla
     const videoParts = [];
@@ -55,22 +54,30 @@ export async function POST(req: NextRequest) {
     videoParts.push({ text: `Video prompt: ${prompt}` });
 
     // 3. Konfigürasyonu hazırla
-    const config = {
-      model: model,
+    // Not: generateVideo metodunun aksine, generateContent'in config'i farklıdır.
+    const generationConfig = {
       // En-boy oranı
       aspectRatio: aspectRatio || '16:9', 
-      // VEO 3.1, generateVideo'da 'durationSeconds' kabul eder
-      durationSeconds: 30, // Default 30 saniye olarak varsayalım.
+      // VEO 3.1 için durationSeconds parametresi burada tanımlanmaz, prompt içinde belirtilir
     };
 
-    // 4. Video oluşturma işlemini BAŞLAT (LRO döndürecek)
-    const result = await (ai as any).generateVideo(videoParts, config);
+    // 4. Video oluşturma işlemini BAŞLAT
+    // VEO 3.1, generateContent metodu altında çalışır ve bir LRO döndürür.
+    const result = await model.generateContent({
+        contents: [
+            {
+                role: 'user',
+                parts: videoParts,
+            }
+        ],
+        config: generationConfig
+    });
     
     // 5. İşlemi (Operation) bekle (Polling)
     let operation = await (ai as any).operations.get(result.operation.name);
     
-    const maxPollTime = 10 * 60 * 1000; // Maksimum 10 dakika bekle
-    const pollInterval = 5000; // Her 5 saniyede bir kontrol et
+    const maxPollTime = 10 * 60 * 1000; 
+    const pollInterval = 5000; 
     let elapsedTime = 0;
 
     while (!operation.done && elapsedTime < maxPollTime) {
@@ -89,6 +96,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Başarılı video dosyasının URI'sini al
+    // Bu yapı generateContent ile uyumludur.
     const videoFile = operation.response?.videoFiles?.[0];
 
     if (!videoFile || !videoFile.uri) {
