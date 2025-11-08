@@ -4,16 +4,15 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { prompt, aspectRatio = "16:9", duration = 8 } = body;
+    const { prompt } = body;
     const apiKey = process.env.GENAI_API_KEY;
 
     if (!apiKey || !prompt) {
       return NextResponse.json({ error: "API key veya prompt eksik" }, { status: 400 });
     }
 
-    // DOĞRU MODEL + DOĞRU PARAMETRELER
     const baseUrl = "https://generativelanguage.googleapis.com/v1/models/veo-3.0-generate-001:generateContent";
-    const url = `${baseUrl}?key=${apiKey}&aspect_ratio=${aspectRatio}&duration_seconds=${duration}`;
+    const url = `${baseUrl}?key=${apiKey}`;
 
     const requestBody = {
       contents: [
@@ -25,7 +24,6 @@ export async function POST(req: NextRequest) {
     };
 
     console.log("API URL:", url);
-    console.log("Payload:", JSON.stringify(requestBody, null, 2));
 
     const res = await fetch(url, {
       method: "POST",
@@ -39,7 +37,7 @@ export async function POST(req: NextRequest) {
       console.error("API HATASI:", JSON.stringify(data, null, 2));
       return NextResponse.json(
         { error: "Video oluşturulamadı", details: data },
-        { status: 400 }
+        { status: res.status }
       );
     }
 
