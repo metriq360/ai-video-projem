@@ -30,7 +30,7 @@ export default function AiVideoStudio() {
     duration_seconds: number;
   };
   const [scenePrompts, setScenePrompts] = useState<Scene[]>([]);
-  const [selectedScenes, setSelectedScenes] = useState<number[]>([];
+  const [selectedScenes, setSelectedScenes] = useState<number[]>([]); // ✅ DÜZELTİLDİ
 
   const [isLoadingScenes, setIsLoadingScenes] = useState(false);
   const [fileContent, setFileContent] = useState('');
